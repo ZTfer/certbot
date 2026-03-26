@@ -48,7 +48,10 @@ ignore=CVS
 # ignore-list. The regex matches against paths and can be in Posix or Windows
 # format. Because '\' represents the directory delimiter on Windows systems, it
 # can't be used as an escape character.
-ignore-paths=
+# CERTBOT COMMENT
+# Changing this line back to the default of `ignore-paths=` is being tracked by
+# https://github.com/certbot/certbot/issues/7908.
+ignore-paths=.*/_internal/tests/
 
 # Files or directories matching the regular expression patterns are skipped.
 # The regex matches against base names, not paths. The default value ignores
@@ -66,7 +69,7 @@ ignored-modules=
 # CERTBOT COMMENT
 # This is needed for pylint to import linter_plugin.py since
 # https://github.com/PyCQA/pylint/pull/3396.
-init-hook="import pylint.config, os, sys; sys.path.append(os.path.dirname(pylint.config.PYLINTRC))"
+init-hook="import pylint.config, os, sys; sys.path.append(os.path.dirname(next(pylint.config.find_default_config_files())))"
 
 # Use multiple processes to speed up Pylint. Specifying 0 will auto-detect the
 # number of processors available to use, and will cap the count on Windows to
@@ -263,8 +266,8 @@ valid-metaclass-classmethod-first-arg=cls
 [EXCEPTIONS]
 
 # Exceptions that will emit a warning when caught.
-overgeneral-exceptions=BaseException,
-                       Exception
+overgeneral-exceptions=builtins.BaseException,
+                       builtins.Exception
 
 
 [FORMAT]
@@ -521,7 +524,7 @@ ignored-classes=optparse.Values,thread._local,_thread._local,argparse.Namespace,
 # List of module names for which member attributes should not be checked
 # (useful for modules/projects where namespaces are manipulated during runtime
 # and thus existing member attributes cannot be deduced by static analysis
-ignored-modules=pkg_resources,confargparse,argparse
+ignored-modules=confargparse,argparse
 
 # Show a hint with possible names when a member name was not found. The aspect
 # of finding the hint is based on edit distance.

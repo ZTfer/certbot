@@ -99,7 +99,7 @@ Apache
 ------
 
 The Apache plugin currently `supports
-<https://github.com/certbot/certbot/blob/master/certbot-apache/certbot_apache/_internal/entrypoint.py>`_
+<https://github.com/certbot/certbot/blob/main/certbot-apache/certbot_apache/_internal/entrypoint.py>`_
 modern OSes based on Debian, Fedora, SUSE, Gentoo, CentOS and Darwin.
 This automates both obtaining *and* installing certificates on an Apache
 webserver. To specify this plugin on the command line, simply include
@@ -323,6 +323,11 @@ Porkbun_           Y    N    DNS Authentication for Porkbun
 Infomaniak_        Y    N    DNS Authentication using Infomaniak Domains API
 dns-multi_         Y    N    DNS authentication of 100+ providers using go-acme/lego
 dns-dnsmanager_    Y    N    DNS Authentication for dnsmanager.io
+standalone-nfq_    Y    N    HTTP Authentication that works with any webserver (Linux only)
+dns-solidserver_   Y    N    DNS Authentication using SOLIDserver (EfficientIP)
+dns-stackit_       Y    N    DNS Authentication using STACKIT DNS
+dns-ionos_         Y    N    DNS Authentication using IONOS Cloud DNS
+dns-mijn-host_     Y    N    DNS Authentication using mijn.host DNS
 ================== ==== ==== ===============================================================
 
 .. _haproxy: https://github.com/greenhost/certbot-haproxy
@@ -347,6 +352,11 @@ dns-dnsmanager_    Y    N    DNS Authentication for dnsmanager.io
 .. _Infomaniak: https://github.com/Infomaniak/certbot-dns-infomaniak
 .. _dns-multi: https://github.com/alexzorin/certbot-dns-multi
 .. _dns-dnsmanager: https://github.com/stayallive/certbot-dns-dnsmanager
+.. _standalone-nfq: https://github.com/alexzorin/certbot-standalone-nfq
+.. _dns-solidserver: https://gitlab.com/charlyhong/certbot-dns-solidserver
+.. _dns-stackit: https://github.com/stackitcloud/certbot-dns-stackit
+.. _dns-ionos: https://github.com/ionos-cloud/certbot-dns-ionos-cloud
+.. _dns-mijn-host: https://github.com/mijnhost/certbot-dns-mijn-host
 
 If you're interested, you can also :ref:`write your own plugin <dev-plugin>`.
 
@@ -372,7 +382,9 @@ This returns information in the following format::
 
 ``Certificate Name`` shows the name of the certificate. Pass this name
 using the ``--cert-name`` flag to specify a particular certificate for the ``run``,
-``certonly``, ``certificates``, ``renew``, and ``delete`` commands. Example::
+``certonly``, ``certificates``, ``renew``, and ``delete`` commands. The certificate
+name cannot contain filepath separators (i.e. '/' or '\\', depending on the platform).
+Example::
 
   certbot certonly --cert-name example.com
 
@@ -701,6 +713,12 @@ form is not appropriate to run daily because each certificate will be
 renewed every day, which will quickly run into the certificate authority
 rate limit.)
 
+Starting with Certbot 2.7.0, certbot provides the environment variables
+`RENEWED_DOMAINS` and `FAILED_DOMAINS` to all post renewal hooks. These
+variables contain a space separated list of domains. These variables can be used
+to determine if a renewal has succeeded or failed as part of your post renewal
+hook.
+
 Note that options provided to ``certbot renew`` will apply to
 *every* certificate for which renewal is attempted; for example,
 ``certbot renew --rsa-key-size 4096`` would try to replace every
@@ -751,6 +769,26 @@ time, Certbot will remember these options and apply them once again.
 Sometimes, you may encounter the need to change some of these options for future certificate renewals. To achieve this,
 you will need to perform the following steps:
 
+Certbot v2.3.0 and newer
+~~~~~~~~~~~~~~~~~~~~~~~~
+The ``certbot reconfigure`` command can be used to change a certificate's renewal options.
+This command will use the new renewal options to perform a test renewal against the Let's Encrypt staging server.
+If this is successful, the new renewal options will be saved and will apply to future renewals.
+
+You will need to specify the ``--cert-name``, which can be found by running ``certbot certificates``.
+
+A list of common options that may be updated with the ``reconfigure`` command can be found by running
+``certbot help reconfigure``.
+
+As a practical example, if you were using the ``webroot`` authenticator and had relocated your website to another directory,
+you can change the ``--webroot-path`` to the new directory using the following command:
+
+.. code-block:: shell
+
+  certbot reconfigure --cert-name example.com --webroot-path /path/to/new/location
+
+Certbot v2.2.0 and older
+~~~~~~~~~~~~~~~~~~~~~~~~
 1. Perform a *dry run renewal* with the amended options on the command line. This allows you to confirm that the change
    is valid and will result in successful future renewals.
 2. If the dry run is successful, perform a *live renewal* of the certificate. This will persist the change for future
@@ -1067,19 +1105,19 @@ ACME directory. For example, if you would like to use Let's Encrypt's
 staging server, you would add ``--server
 https://acme-staging-v02.api.letsencrypt.org/directory`` to the command line.
 
+.. note:: ``--dry-run`` uses the Let's Encrypt staging server, unless ``--server``
+   is specified on the CLI or in the :ref:`cli.ini configuration file <config-file>`.
+   Take caution when using ``--dry-run`` with a custom server, as it may cause real
+   certificates to be issued and discarded.
+
 If Certbot does not trust the SSL certificate used by the ACME server, you
 can use the `REQUESTS_CA_BUNDLE
 <https://requests.readthedocs.io/en/latest/user/advanced/#ssl-cert-verification>`_
 environment variable to override the root certificates trusted by Certbot. Certbot
 uses the ``requests`` library, which does not use the operating system trusted root store.
+Make sure that ``REQUESTS_CA_BUNDLE`` is set globally in the environment and not only on
+the CLI, or scheduled renewal will not succeed.
 
-If you use ``--server`` to specify an ACME CA that implements the standardized
-version of the spec, you may be able to obtain a certificate for a
-wildcard domain. Some CAs (such as Let's Encrypt) require that domain
-validation for wildcard domains must be done through modifications to
-DNS records which means that the dns-01_ challenge type must be used. To
-see a list of Certbot plugins that support this challenge type and how
-to use them, see plugins_.
 
 Lock Files
 ==========

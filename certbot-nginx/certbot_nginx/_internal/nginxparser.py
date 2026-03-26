@@ -10,8 +10,8 @@ from typing import Iterable
 from typing import Iterator
 from typing import List
 from typing import overload
+from typing import SupportsIndex
 from typing import Tuple
-from typing import TYPE_CHECKING
 from typing import Union
 
 from pyparsing import Combine
@@ -27,22 +27,7 @@ from pyparsing import stringEnd
 from pyparsing import White
 from pyparsing import ZeroOrMore
 
-if TYPE_CHECKING:
-    from typing_extensions import SupportsIndex  # typing.SupportsIndex not supported on Python 3.7
-
 logger = logging.getLogger(__name__)
-
-
-class UnsupportedDirectiveException(RuntimeError):
-    """Exception when encountering an nginx directive which is not supported
-    by this parser."""
-
-    directive_name: str
-    line_no: int
-
-    def __init__(self, directive_name: str, line_no: int) -> None:
-        self.directive_name = directive_name
-        self.line_no = line_no
 
 
 class RawNginxParser:
@@ -86,7 +71,6 @@ class RawNginxParser:
 
     def __init__(self, source: str) -> None:
         self.source = source
-        self.whitespace_token_group.addParseAction(self._check_disallowed_directive)
 
     def parse(self) -> ParseResults:
         """Returns the parsed tree."""
@@ -95,12 +79,6 @@ class RawNginxParser:
     def as_list(self) -> List[Any]:
         """Returns the parsed tree as a list."""
         return self.parse().asList()
-
-    def _check_disallowed_directive(self, _source: str, line: int, results: ParseResults) -> None:
-        # *_by_lua_block might be first or second result, due to optional leading whitespace
-        toks = [t for t in results[0:2] if isinstance(t, str) and t.endswith("_by_lua_block")]
-        if toks:
-            raise UnsupportedDirectiveException(toks[0], line)
 
 
 class RawNginxDumper:
@@ -316,7 +294,7 @@ def dumps(blocks: UnspacedList) -> str:
     """Dump to a Unicode string.
 
     :param UnspacedList blocks: The parsed tree
-    :rtype: six.text_type
+    :rtype: str
 
     """
     return str(RawNginxDumper(blocks.spaced))

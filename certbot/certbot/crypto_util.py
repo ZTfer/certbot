@@ -45,6 +45,8 @@ from certbot.compat import os
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PublicKey
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    from cryptography.hazmat.primitives.asymmetric.x448 import X448PublicKey
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey
 
 logger = logging.getLogger(__name__)
 
@@ -206,11 +208,11 @@ def import_csr_file(csrfile: str, data: bytes) -> Tuple[int, util.CSR, List[str]
     return PEM, util.CSR(file=csrfile, data=data_pem, form="pem"), domains
 
 
-def make_key(bits: int = 1024, key_type: str = "rsa",
+def make_key(bits: int = 2048, key_type: str = "rsa",
              elliptic_curve: Optional[str] = None) -> bytes:
     """Generate PEM encoded RSA|EC key.
 
-    :param int bits: Number of bits if key_type=rsa. At least 1024 for RSA.
+    :param int bits: Number of bits if key_type=rsa. At least 2048 for RSA.
     :param str key_type: The type of key to generate, but be rsa or ecdsa
     :param str elliptic_curve: The elliptic curve to use.
 
@@ -219,7 +221,7 @@ def make_key(bits: int = 1024, key_type: str = "rsa",
     :rtype: str
     """
     if key_type == 'rsa':
-        if bits < 1024:
+        if bits < 2048:
             raise errors.Error("Unsupported RSA key length: {}".format(bits))
 
         key = crypto.PKey()
@@ -243,11 +245,7 @@ def make_key(bits: int = 1024, key_type: str = "rsa",
             raise errors.Error("Unsupported elliptic curve: {}".format(elliptic_curve))
         except UnsupportedAlgorithm as e:
             raise e from errors.Error(str(e))
-        # This type ignore directive is required due to an outdated version of types-cryptography.
-        # It can be removed once package types-pyOpenSSL depends on cryptography instead of
-        # types-cryptography and so types-cryptography is not installed anymore.
-        # See https://github.com/python/typeshed/issues/5618
-        _key_pem = _key.private_bytes(  # type: ignore
+        _key_pem = _key.private_bytes(
             encoding=Encoding.PEM,
             format=PrivateFormat.TraditionalOpenSSL,
             encryption_algorithm=NoEncryption()
@@ -306,6 +304,7 @@ def verify_renewable_cert_sig(renewable_cert: interfaces.RenewableCert) -> None:
         with open(renewable_cert.cert_path, 'rb') as cert_file:
             cert = x509.load_pem_x509_certificate(cert_file.read(), default_backend())
         pk = chain.public_key()
+        assert cert.signature_hash_algorithm # always present for RSA and ECDSA
         verify_signed_payload(pk, cert.signature, cert.tbs_certificate_bytes,
                                 cert.signature_hash_algorithm)
     except (IOError, ValueError, InvalidSignature) as e:
@@ -316,7 +315,8 @@ def verify_renewable_cert_sig(renewable_cert: interfaces.RenewableCert) -> None:
 
 
 def verify_signed_payload(public_key: Union[DSAPublicKey, 'Ed25519PublicKey', 'Ed448PublicKey',
-                                            EllipticCurvePublicKey, RSAPublicKey],
+                                            EllipticCurvePublicKey, RSAPublicKey,
+                                            'X25519PublicKey', 'X448PublicKey'],
                           signature: bytes, payload: bytes,
                           signature_hash_algorithm: hashes.HashAlgorithm) -> None:
     """Check the signature of a payload.

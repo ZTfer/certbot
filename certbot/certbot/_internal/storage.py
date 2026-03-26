@@ -7,6 +7,7 @@ import re
 import shutil
 import stat
 from typing import Any
+from typing import cast
 from typing import Dict
 from typing import Iterable
 from typing import List
@@ -17,11 +18,10 @@ from typing import Union
 
 import configobj
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 import parsedatetime
-import pkg_resources
 import pytz
 
 import certbot
@@ -31,20 +31,22 @@ from certbot import errors
 from certbot import interfaces
 from certbot import ocsp
 from certbot import util
-from certbot._internal import cli
 from certbot._internal import constants
 from certbot._internal import error_handler
 from certbot._internal.plugins import disco as plugins_disco
 from certbot.compat import filesystem
 from certbot.compat import os
 from certbot.plugins import common as plugins_common
+from certbot.util import parse_loose_version
 
 logger = logging.getLogger(__name__)
 
 ALL_FOUR = ("cert", "privkey", "chain", "fullchain")
 README = "README"
-CURRENT_VERSION = pkg_resources.parse_version(certbot.__version__)
+CURRENT_VERSION = parse_loose_version(certbot.__version__)
 BASE_PRIVKEY_MODE = 0o600
+
+# pylint: disable=too-many-lines
 
 
 def renewal_conf_files(config: configuration.NamespaceConfig) -> List[str]:
@@ -214,7 +216,7 @@ def update_configuration(lineagename: str, archive_dir: str, target: Mapping[str
         os.unlink(temp_filename)
 
     # Save only the config items that are relevant to renewal
-    values = relevant_values(vars(cli_config.namespace))
+    values = relevant_values(cli_config)
     write_renewal_config(config_filename, temp_filename, archive_dir, target, values)
     filesystem.replace(temp_filename, config_filename)
 
@@ -280,22 +282,23 @@ def _relevant(namespaces: Iterable[str], option: str) -> bool:
             any(option.startswith(namespace) for namespace in namespaces))
 
 
-def relevant_values(all_values: Mapping[str, Any]) -> Dict[str, Any]:
+def relevant_values(config: configuration.NamespaceConfig) -> Dict[str, Any]:
     """Return a new dict containing only items relevant for renewal.
 
-    :param dict all_values: The original values.
+    :param .NamespaceConfig config: parsed command line
 
     :returns: A new dictionary containing items that can be used in renewal.
     :rtype dict:
 
     """
+    all_values = config.to_dict()
     plugins = plugins_disco.PluginsRegistry.find_all()
     namespaces = [plugins_common.dest_namespace(plugin) for plugin in plugins]
 
     rv = {
         option: value
         for option, value in all_values.items()
-        if _relevant(namespaces, option) and cli.option_was_set(option, value)
+        if _relevant(namespaces, option) and config.set_by_user(option)
     }
     # We always save the server value to help with forward compatibility
     # and behavioral consistency when versions of Certbot with different
@@ -452,8 +455,7 @@ class RenewableCert(interfaces.RenewableCert):
         renewal configuration file and/or systemwide defaults.
 
     """
-    def __init__(self, config_filename: str, cli_config: configuration.NamespaceConfig,
-                 update_symlinks: bool = False) -> None:
+    def __init__(self, config_filename: str, cli_config: configuration.NamespaceConfig) -> None:
         """Instantiate a RenewableCert object from an existing lineage.
 
         :param str config_filename: the path to the renewal config file
@@ -489,7 +491,7 @@ class RenewableCert(interfaces.RenewableCert):
 
         conf_version = self.configuration.get("version")
         if (conf_version is not None and
-                pkg_resources.parse_version(conf_version) > CURRENT_VERSION):
+                parse_loose_version(conf_version) > CURRENT_VERSION):
             logger.info(
                 "Attempting to parse the version %s renewal configuration "
                 "file found at %s with version %s of Certbot. This might not "
@@ -502,8 +504,6 @@ class RenewableCert(interfaces.RenewableCert):
         self.live_dir = os.path.dirname(self.cert)
 
         self._fix_symlinks()
-        if update_symlinks:
-            self._update_symlinks()
         self._check_symlinks()
 
     @property
@@ -590,17 +590,6 @@ class RenewableCert(interfaces.RenewableCert):
                 raise errors.CertStorageError("target {0} of symlink {1} does "
                                               "not exist".format(target, link))
 
-    def _update_symlinks(self) -> None:
-        """Updates symlinks to use archive_dir"""
-        for kind in ALL_FOUR:
-            link = getattr(self, kind)
-            previous_link = get_link_target(link)
-            new_link = os.path.join(self.relative_archive_dir(link),
-                os.path.basename(previous_link))
-
-            os.unlink(link)
-            os.symlink(new_link, link)
-
     def _consistent(self) -> bool:
         """Are the files associated with this lineage self-consistent?
 
@@ -633,10 +622,7 @@ class RenewableCert(interfaces.RenewableCert):
                              "cert lineage's directory within the "
                              "official archive directory. Link: %s, "
                              "target directory: %s, "
-                             "archive directory: %s. If you've specified "
-                             "the archive directory in the renewal configuration "
-                             "file, you may need to update links by running "
-                             "certbot update_symlinks.",
+                             "archive directory: %s.",
                              link, os.path.dirname(target), self.archive_dir)
                 return False
 
@@ -1020,7 +1006,7 @@ class RenewableCert(interfaces.RenewableCert):
             interval = self.configuration.get("renew_before_expiry", default_interval)
             expiry = crypto_util.notAfter(self.version(
                 "cert", self.latest_common_version()))
-            now = pytz.UTC.fromutc(datetime.datetime.utcnow())
+            now = datetime.datetime.now(pytz.UTC)
             if expiry < add_time_interval(now, interval):
                 logger.debug("Should renew, less than %s before certificate "
                              "expiry %s.", interval,
@@ -1118,7 +1104,7 @@ class RenewableCert(interfaces.RenewableCert):
         config_file.close()
 
         # Save only the config items that are relevant to renewal
-        values = relevant_values(vars(cli_config.namespace))
+        values = relevant_values(cli_config)
 
         new_config = write_renewal_config(config_filename, config_filename, archive,
             target, values)
@@ -1131,7 +1117,7 @@ class RenewableCert(interfaces.RenewableCert):
                 password=None,
                 backend=default_backend()
             )
-            return key
+            return cast(Union[RSAPrivateKey, EllipticCurvePrivateKey], key)
 
     @property
     def private_key_type(self) -> str:
@@ -1244,6 +1230,19 @@ class RenewableCert(interfaces.RenewableCert):
         self.configuration = config_with_defaults(self.configfile)
 
         return target_version
+
+    def save_new_config_values(self, cli_config: configuration.NamespaceConfig) -> None:
+        """Save only the config information without writing the new cert.
+
+        :param .NamespaceConfig cli_config: parsed command line
+            arguments
+        """
+        self.cli_config = cli_config
+        symlinks = {kind: self.configuration[kind] for kind in ALL_FOUR}
+        # Update renewal config file
+        self.configfile = update_configuration(
+            self.lineagename, self.archive_dir, symlinks, cli_config)
+        self.configuration = config_with_defaults(self.configfile)
 
     def truncate(self, num_prior_certs_to_keep: int = 5) -> None:
         """Delete unused historical certificate, chain and key items from the lineage.

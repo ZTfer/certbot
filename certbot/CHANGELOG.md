@@ -2,7 +2,7 @@
 
 Certbot adheres to [Semantic Versioning](https://semver.org/).
 
-## 2.3.0 - master
+## 3.0.0 - main
 
 ### Added
 
@@ -10,13 +10,274 @@ Certbot adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+* The update_symlinks command was removed.
+* The `csr_dir` and `key_dir` attributes on
+  `certbot.configuration.NamespaceConfig` were removed.
+* The `--manual-public-ip-logging-ok` command line flag was removed.
+* The `--dns-route53-propagation-seconds` command line flag was removed.
+* The `certbot_dns_route53.authenticator` module has been removed. This should
+  not affect any users of the plugin and instead would only affect developers
+  trying to develop on top of the old code.
+
+### Fixed
+
+*
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.11.0 - 2024-06-05
+
+### Added
+
+*
+
+### Changed
+
+* In anticipation of backwards incompatible changes, certbot-dns-cloudflare now
+  requires less than version 2.20 of Cloudflare's python library.
+
+### Fixed
+
+* Fixed a bug in Certbot where a CSR's SANs did not always follow the order of
+  the domain names that the user requested interactively. In some cases, the
+  resulting cert's common name might seem picked up randomly from the SANs
+  when it should be the first item the user had in mind.
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.10.0 - 2024-04-02
+
+### Added
+
+* The Python source packages which we upload to [PyPI](https://pypi.org/) are
+  now also being uploaded to
+  [our releases on GitHub](https://github.com/certbot/certbot/releases) where
+  we now also include a SHA256SUMS checksum file and a PGP signature for that
+  file.
+
+### Changed
+
+* We no longer publish our beta Windows installer as was originally announced
+  [here](https://community.letsencrypt.org/t/certbot-discontinuing-windows-beta-support-in-2024/208101).
+
+### Fixed
+
+*
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.9.0 - 2024-02-08
+
+### Added
+
+* Support for Python 3.12 was added.
+
+### Changed
+
+*
+
+### Fixed
+
+* Updates `joinpath` syntax to only use one addition per call, because the multiple inputs
+  version was causing mypy errors on Python 3.10.
+* Makes the `reconfigure` verb actually use the staging server for the dry run to check the new
+  configuration.
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.8.0 - 2023-12-05
+
+### Added
+
+* Added support for [Alpine Linux](https://www.alpinelinux.org) distribution when is used the apache plugin
+
+### Changed
+
+* Support for Python 3.7 was removed.
+
+### Fixed
+
+* Stop using the deprecated `pkg_resources` API included in `setuptools`.
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.7.4 - 2023-11-01
+
+### Fixed
+
+* Fixed a bug introduced in version 2.7.0 that caused interactively entered
+  webroot plugin values to not be saved for renewal.
+* Fixed a bug introduced in version 2.7.0 of our Lexicon based DNS plugins that
+  caused them to fail to find the DNS zone that needs to be modified in some
+  cases.
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.7.3 - 2023-10-24
+
+### Fixed
+
+* Fixed a bug where arguments with contained spaces weren't being handled correctly
+* Fixed a bug that caused the ACME account to not be properly restored on
+  renewal causing problems in setups where the user had multiple accounts with
+  the same ACME server.
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.7.2 - 2023-10-19
+
+### Fixed
+
+* `certbot-dns-ovh` plugin now requires `lexicon>=3.15.1` to ensure a consistent behavior with OVH APIs.
+* Fixed a bug where argument sources weren't correctly detected in abbreviated
+  arguments, short arguments, and some other circumstances
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.7.1 - 2023-10-10
+
+### Fixed
+
+* Fixed a bug that broke the DNS plugin for DNSimple that was introduced in
+  version 2.7.0 of the plugin.
+* Correctly specified the new minimum version of the ConfigArgParse package
+  that Certbot requires which is 1.5.3.
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.7.0 - 2023-10-03
+
+### Added
+
+* Add `certbot.util.LooseVersion` class. See [GH #9489](https://github.com/certbot/certbot/issues/9489).
+* Add a new base class `certbot.plugins.dns_common_lexicon.LexiconDNSAuthenticator` to implement a DNS
+  authenticator plugin backed by Lexicon to communicate with the provider DNS API. This approach relies
+  heavily on conventions to reduce the implementation complexity of a new plugin.
+* Add a new test base class `certbot.plugins.dns_test_common_lexicon.BaseLexiconDNSAuthenticatorTest` to
+  help testing DNS plugins implemented on top of `LexiconDNSAuthenticator`.
+
+### Changed
+
+* `NamespaceConfig` now tracks how its arguments were set via a dictionary, allowing us to remove a bunch
+  of global state previously needed to inspect whether a user set an argument or not.
+* Support for Python 3.7 was deprecated and will be removed in our next planned release.
+* Added `RENEWED_DOMAINS` and `FAILED_DOMAINS` environment variables for consumption by post renewal hooks.
+* Deprecates `LexiconClient` base class and `build_lexicon_config` function in
+  `certbot.plugins.dns_common_lexicon` module in favor of `LexiconDNSAuthenticator`.
+* Deprecates `BaseLexiconAuthenticatorTest` and `BaseLexiconClientTest` test base classes of
+  `certbot.plugins.dns_test_common_lexicon` module in favor of `BaseLexiconDNSAuthenticatorTest`.
+
+### Fixed
+
+* Do not call deprecated datetime.utcnow() and datetime.utcfromtimestamp()
+* Filter zones in `certbot-dns-google` to avoid usage of private DNS zones to create records
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.6.0 - 2023-05-09
+
+### Added
+
+* `--dns-google-project` optionally allows for specifying the project that the DNS zone(s) reside in,
+  which allows for Certbot usage in scenarios where the auth credentials reside in a different
+  project to the zone(s) that are being managed.
+* There is now a new `Other` annotated challenge object to allow plugins to support entirely novel challenges.
+
+### Changed
+
+* Optionally sign the SOA query for dns-rfc2136, to help resolve problems with split-view
+  DNS setups and hidden primary setups.
+  * Certbot versions prior to v1.32.0 did not sign queries with the specified TSIG key
+    resulting in difficulty with split-horizon implementations.
+  * Certbot v1.32.0 through v2.5.0 signed queries by default, potentially causing
+    incompatibility with hidden primary setups with `allow-update-forwarding` enabled
+    if the secondary did not also have the TSIG key within its config.
+  * Certbot v2.6.0 and later no longer signs queries by default, but allows
+    the user to optionally sign these queries by explicit configuration using the
+    `dns_rfc2136_sign_query` option in the credentials .ini file.
+* Lineage name validity is performed for new lineages. `--cert-name` may no longer contain
+  filepath separators (i.e. `/` or `\`, depending on the platform).
+* `certbot-dns-google` now loads credentials using the standard [Application Default
+  Credentials](https://cloud.google.com/docs/authentication/application-default-credentials) strategy,
+  rather than explicitly requiring the Google Compute metadata server to be present if a service account
+  is not provided using `--dns-google-credentials`.
+* `--dns-google-credentials` now supports additional types of file-based credential, such as
+  [External Account Credentials](https://google.aip.dev/auth/4117) created by Workload Identity
+  Federation. All file-based credentials implemented by the Google Auth library are supported.
+
+### Fixed
+
+* `certbot-dns-google` no longer requires deprecated `oauth2client` library.
+* Certbot will no longer try to invoke plugins which do not subclass from the proper
+  `certbot.interfaces.{Installer,Authenticator}` interface (e.g. `certbot -i standalone`
+  will now be ignored). See [GH-9664](https://github.com/certbot/certbot/issues/9664).
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.5.0 - 2023-04-04
+
+### Added
+
+* `acme.messages.OrderResource` now supports being round-tripped
+  through JSON
+* acme.client.ClientV2 now provides separate `begin_finalization`
+  and `poll_finalization` methods, in addition to the existing
+  `finalize_order` method.
+
+### Changed
+
+* `--dns-route53-propagation-seconds` is now deprecated. The Route53 plugin relies on the
+  [GetChange API](https://docs.aws.amazon.com/Route53/latest/APIReference/API_GetChange.html)
+  to determine if a DNS update is complete. The flag has never had any effect and will be
+  removed in a future version of Certbot.
+* Packaged tests for all Certbot components besides josepy were moved inside
+  the `_internal/tests` module.
+
+### Fixed
+
+* Fixed `renew` sometimes not preserving the key type of RSA certificates.
+  * Users who upgraded from Certbot <v1.25.0 to Certbot >=v2.0.0 may
+    have had their RSA certificates inadvertently changed to ECDSA certificates. If desired,
+    the key type may be changed back to RSA. See the [User Guide](https://eff-certbot.readthedocs.io/en/stable/using.html#changing-a-certificate-s-key-type).
+* Deprecated flags were inadvertently not printing warnings since v1.16.0. This is now fixed.
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.4.0 - 2023-03-07
+
+### Added
+
+* We deprecated support for the update_symlinks command. Support will be removed in a following
+  version of Certbot.
+
+### Changed
+
+* Docker build and deploy scripts now generate multiarch manifests for non-architecture-specific tags, instead of defaulting to amd64 images.
+
+### Fixed
+
+* Reverted [#9475](https://github.com/certbot/certbot/pull/9475) due to a performance regression in large nginx deployments.
+
+More details about these changes can be found on our GitHub repo.
+
+## 2.3.0 - 2023-02-14
+
+### Added
+
+* Allow a user to modify the configuration of a certificate without renewing it using the new `reconfigure` subcommand. See `certbot help reconfigure` for details.
+* `certbot show_account` now displays the [ACME Account Thumbprint](https://datatracker.ietf.org/doc/html/rfc8555#section-8.1).
+
+### Changed
+
 * Certbot will no longer save previous CSRs and certificate private keys to `/etc/letsencrypt/csr` and `/etc/letsencrypt/keys`, respectively. These directories may be safely deleted.
 * Certbot will now only keep the current and 5 previous certificates in the `/etc/letsencrypt/archive` directory for each certificate lineage. Any prior certificates will be automatically deleted upon renewal. This number may be further lowered in future releases.
   * As always, users should only reference the certificate files within `/etc/letsencrypt/live` and never use `/etc/letsencrypt/archive` directly. See [Where are my certificates?](https://eff-certbot.readthedocs.io/en/stable/using.html#where-are-my-certificates) in the Certbot User Guide.
 * `certbot.configuration.NamespaceConfig.key_dir` and `.csr_dir` are now deprecated.
+* All Certbot components now require `pytest` to run tests.
 
 ### Fixed
 
+* Fixed a crash when registering an account with BuyPass' ACME server.
 * Fixed a bug where Certbot would crash with `AttributeError: can't set attribute` on ACME server errors in Python 3.11. See [GH #9539](https://github.com/certbot/certbot/issues/9539).
 
 More details about these changes can be found on our GitHub repo.
@@ -200,7 +461,7 @@ More details about these changes can be found on our GitHub repo.
 
 ### Added
 
-* Updated Windows installer to be signed and trusted in Windows 
+* Updated Windows installer to be signed and trusted in Windows
 
 ### Changed
 

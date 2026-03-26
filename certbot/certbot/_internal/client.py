@@ -2,9 +2,9 @@
 import datetime
 import logging
 import platform
-from typing import cast
 from typing import Any
 from typing import Callable
+from typing import cast
 from typing import Dict
 from typing import IO
 from typing import List
@@ -14,11 +14,11 @@ from typing import Tuple
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric.rsa import generate_private_key
 import josepy as jose
-import OpenSSL
 from josepy import ES256
 from josepy import ES384
 from josepy import ES512
 from josepy import RS256
+import OpenSSL
 
 from acme import client as acme_client
 from acme import crypto_util as acme_crypto_util
@@ -513,6 +513,7 @@ class Client:
             referred to the enrolled cert lineage, or None if doing a successful dry run.
 
         """
+        new_name = self._choose_lineagename(domains, certname)
         cert, chain, key, _ = self.obtain_certificate(domains)
 
         if (self.config.config_dir != constants.CLI_DEFAULTS["config_dir"] or
@@ -520,8 +521,6 @@ class Client:
             logger.info(
                 "Non-standard path(s), might not work with crontab installed "
                 "by your operating system package manager")
-
-        new_name = self._choose_lineagename(domains, certname)
 
         if self.config.dry_run:
             logger.debug("Dry run: Skipping creating new lineage for %s", new_name)
@@ -559,13 +558,41 @@ class Client:
         :returns: lineage name that should be used
         :rtype: str
 
+        :raises errors.Error: If the chosen lineage name is invalid.
+
         """
+        # Remember chosen name for new lineage
+        lineagename = None
         if certname:
-            return certname
+            lineagename = certname
         elif util.is_wildcard_domain(domains[0]):
             # Don't make files and directories starting with *.
-            return domains[0][2:]
-        return domains[0]
+            lineagename = domains[0][2:]
+        else:
+            lineagename = domains[0]
+        # Verify whether chosen lineage is valid
+        if self._is_valid_lineagename(lineagename):
+            return lineagename
+        else:
+            raise errors.Error(
+                "The provided certname cannot be used as a lineage name because it contains "
+                "an illegal character (i.e. filepath separator)." if certname else
+                "Cannot use domain name as lineage name because it contains an illegal "
+                "character (i.e. filepath separator). Specify an explicit lineage name "
+                "with --cert-name.")
+
+    def _is_valid_lineagename(self, name: str) -> bool:
+        """Determines whether the provided name is a valid lineagename. A lineagename
+        is invalid when it contains filepath separators.
+
+        :param name: the lineage name to determine validity for
+        :type name: `str`
+
+        :returns: Whether the provided string constitutes a valid lineage name.
+        :rtype: bool
+
+        """
+        return os.path.sep not in name
 
     def save_certificate(self, cert_pem: bytes, chain_pem: bytes,
                          cert_path: str, chain_path: str, fullchain_path: str
@@ -588,15 +615,16 @@ class Client:
         for path in cert_path, chain_path, fullchain_path:
             util.make_or_verify_dir(os.path.dirname(path), 0o755, self.config.strict_permissions)
 
-        cert_file, abs_cert_path = _open_pem_file('cert_path', cert_path)
+        cert_file, abs_cert_path = _open_pem_file(self.config, 'cert_path', cert_path)
 
         try:
             cert_file.write(cert_pem)
         finally:
             cert_file.close()
 
-        chain_file, abs_chain_path = _open_pem_file('chain_path', chain_path)
-        fullchain_file, abs_fullchain_path = _open_pem_file('fullchain_path', fullchain_path)
+        chain_file, abs_chain_path = _open_pem_file(self.config, 'chain_path', chain_path)
+        fullchain_file, abs_fullchain_path = _open_pem_file(
+            self.config, 'fullchain_path', fullchain_path)
 
         _save_chain(chain_pem, chain_file)
         _save_chain(cert_pem + chain_pem, fullchain_file)
@@ -820,7 +848,8 @@ def rollback(default_installer: str, checkpoints: int,
         installer.restart()
 
 
-def _open_pem_file(cli_arg_path: str, pem_path: str) -> Tuple[IO, str]:
+def _open_pem_file(config: configuration.NamespaceConfig,
+                   cli_arg_path: str, pem_path: str) -> Tuple[IO, str]:
     """Open a pem file.
 
     If cli_arg_path was set by the client, open that.
@@ -832,7 +861,7 @@ def _open_pem_file(cli_arg_path: str, pem_path: str) -> Tuple[IO, str]:
     :returns: a tuple of file object and its absolute file path
 
     """
-    if cli.set_by_cli(cli_arg_path):
+    if config.set_by_user(cli_arg_path):
         return util.safe_open(pem_path, chmod=0o644, mode="wb"),\
             os.path.abspath(pem_path)
     uniq = util.unique_file(pem_path, 0o644, "wb")

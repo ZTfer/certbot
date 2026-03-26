@@ -13,6 +13,7 @@ from typing import Iterable
 from typing import List
 from typing import Mapping
 from typing import Optional
+from typing import Tuple
 from typing import Union
 
 from cryptography.hazmat.backends import default_backend
@@ -53,7 +54,7 @@ CONFIG_ITEMS = set(itertools.chain(
     BOOL_CONFIG_ITEMS, INT_CONFIG_ITEMS, STR_CONFIG_ITEMS, ('pref_challs',)))
 
 
-def _reconstitute(config: configuration.NamespaceConfig,
+def reconstitute(config: configuration.NamespaceConfig,
                   full_path: str) -> Optional[storage.RenewableCert]:
     """Try to instantiate a RenewableCert, updating config with relevant items.
 
@@ -87,6 +88,14 @@ def _reconstitute(config: configuration.NamespaceConfig,
         logger.error("Renewal configuration file %s does not specify "
                        "an authenticator. Skipping.", full_path)
         return None
+
+    # Prior to Certbot v1.25.0, the default value of key_type (rsa) was not persisted to the
+    # renewal params. If the option is absent, it means the certificate was an RSA key.
+    # Restoring the option here is necessary to preserve the certificate key_type if
+    # the user has upgraded directly from Certbot <v1.25.0 to >=v2.0.0, where the default
+    # key_type was changed to ECDSA. See https://github.com/certbot/certbot/issues/9635.
+    renewalparams["key_type"] = renewalparams.get("key_type", "rsa")
+
     # Now restore specific values along with their data types, if
     # those elements are present.
     renewalparams = _remove_deprecated_config_elements(renewalparams)
@@ -119,11 +128,11 @@ def _restore_webroot_config(config: configuration.NamespaceConfig,
     restoring logic is not able to correctly parse it from the serialized
     form.
     """
-    if "webroot_map" in renewalparams and not cli.set_by_cli("webroot_map"):
+    if "webroot_map" in renewalparams and not config.set_by_user("webroot_map"):
         config.webroot_map = renewalparams["webroot_map"]
     # To understand why webroot_path and webroot_map processing are not mutually exclusive,
     # see https://github.com/certbot/certbot/pull/7095
-    if "webroot_path" in renewalparams and not cli.set_by_cli("webroot_path"):
+    if "webroot_path" in renewalparams and not config.set_by_user("webroot_path"):
         wp = renewalparams["webroot_path"]
         if isinstance(wp, str):  # prior to 0.1.0, webroot_path was a string
             wp = [wp]
@@ -162,7 +171,7 @@ def _restore_plugin_configs(config: configuration.NamespaceConfig,
     for plugin_prefix in set(plugin_prefixes):
         plugin_prefix = plugin_prefix.replace('-', '_')
         for config_item, config_value in renewalparams.items():
-            if config_item.startswith(plugin_prefix + "_") and not cli.set_by_cli(config_item):
+            if config_item.startswith(plugin_prefix + "_") and not config.set_by_user(config_item):
                 # Values None, True, and False need to be treated specially,
                 # As their types aren't handled correctly by configobj
                 if config_value in ("None", "True", "False"):
@@ -185,15 +194,18 @@ def restore_required_config_elements(config: configuration.NamespaceConfig,
 
     """
 
+    updated_values = {}
     required_items = itertools.chain(
         (("pref_challs", _restore_pref_challs),),
         zip(BOOL_CONFIG_ITEMS, itertools.repeat(_restore_bool)),
         zip(INT_CONFIG_ITEMS, itertools.repeat(_restore_int)),
         zip(STR_CONFIG_ITEMS, itertools.repeat(_restore_str)))
     for item_name, restore_func in required_items:
-        if item_name in renewalparams and not cli.set_by_cli(item_name):
+        if item_name in renewalparams and not config.set_by_user(item_name):
             value = restore_func(item_name, renewalparams[item_name])
-            setattr(config.namespace, item_name, value)
+            updated_values[item_name] = value
+    for key, value in updated_values.items():
+        setattr(config, key, value)
 
 
 def _remove_deprecated_config_elements(renewalparams: Mapping[str, Any]) -> Dict[str, Any]:
@@ -331,7 +343,7 @@ def _avoid_reuse_key_conflicts(config: configuration.NamespaceConfig,
     --new-key is also set.
     """
     # If --no-reuse-key is set, no conflict
-    if cli.set_by_cli("reuse_key") and not config.reuse_key:
+    if config.set_by_user("reuse_key") and not config.reuse_key:
         return
 
     # If reuse_key is not set on the lineage and --reuse-key is not
@@ -451,7 +463,7 @@ def _renew_describe_results(config: configuration.NamespaceConfig, renew_success
     notify(display_obj.SIDE_FRAME)
 
 
-def handle_renewal_request(config: configuration.NamespaceConfig) -> None:
+def handle_renewal_request(config: configuration.NamespaceConfig) -> Tuple[list, list]:
     """Examine each lineage; renew if due and report results"""
 
     # This is trivially False if config.domains is empty
@@ -476,6 +488,9 @@ def handle_renewal_request(config: configuration.NamespaceConfig) -> None:
     renew_skipped = []
     parse_failures = []
 
+    renewed_domains = []
+    failed_domains = []
+
     # Noninteractive renewals include a random delay in order to spread
     # out the load on the certificate authority servers, even if many
     # users all pick the same time for renewals.  This delay precedes
@@ -491,7 +506,7 @@ def handle_renewal_request(config: configuration.NamespaceConfig) -> None:
         # Note that this modifies config (to add back the configuration
         # elements from within the renewal configuration file).
         try:
-            renewal_candidate = _reconstitute(lineage_config, renewal_file)
+            renewal_candidate = reconstitute(lineage_config, renewal_file)
         except Exception as e:  # pylint: disable=broad-except
             logger.error("Renewal configuration file %s (cert: %s) "
                            "produced an unexpected error: %s. Skipping.",
@@ -524,6 +539,7 @@ def handle_renewal_request(config: configuration.NamespaceConfig) -> None:
                     # and we have a lineage in renewal_candidate
                     main.renew_cert(lineage_config, plugins, renewal_candidate)
                     renew_successes.append(renewal_candidate.fullchain)
+                    renewed_domains.extend(renewal_candidate.names())
                 else:
                     expiry = crypto_util.notAfter(renewal_candidate.version(
                         "cert", renewal_candidate.latest_common_version()))
@@ -542,6 +558,7 @@ def handle_renewal_request(config: configuration.NamespaceConfig) -> None:
             logger.debug("Traceback was:\n%s", traceback.format_exc())
             if renewal_candidate:
                 renew_failures.append(renewal_candidate.fullchain)
+                failed_domains.extend(renewal_candidate.names())
 
     # Describe all the results
     _renew_describe_results(config, renew_successes, renew_failures,
@@ -554,6 +571,8 @@ def handle_renewal_request(config: configuration.NamespaceConfig) -> None:
     # Windows installer integration tests rely on handle_renewal_request behavior here.
     # If the text below changes, these tests will need to be updated accordingly.
     logger.debug("no renewal failures")
+
+    return (renewed_domains, failed_domains)
 
 
 def _update_renewal_params_from_key(key_path: str, config: configuration.NamespaceConfig) -> None:
